@@ -1,0 +1,103 @@
+{
+  "coins": 310,
+  "day": 27,
+  "plants": [
+    {
+      "species": "Sunflower",
+      "pot_id": 1,
+      "stage": 3,
+      "age": 10,
+      "water_level": 0,
+      "health": 0,
+      "is_alive": false,
+      "bloom_color": "Solar",
+      "rare_bloom": false,
+      "mutation_boost": false,
+      "revived_once": false,
+      "full_water_streak": 0,
+      "rescued_from_low_health": true
+    },
+    {
+      "species": "Lily",
+      "pot_id": 2,
+      "stage": 3,
+      "age": 10,
+      "water_level": 0,
+      "health": 0,
+      "is_alive": false,
+      "bloom_color": "Mint",
+      "rare_bloom": false,
+      "mutation_boost": false,
+      "revived_once": false,
+      "full_water_streak": 0,
+      "rescued_from_low_health": true
+    },
+    {
+      "species": "Tulip",
+      "pot_id": 3,
+      "stage": 3,
+      "age": 6,
+      "water_level": 0,
+      "health": 6,
+      "is_alive": true,
+      "bloom_color": "Rare Ivory",
+      "rare_bloom": true,
+      "mutation_boost": false,
+      "revived_once": false,
+      "full_water_streak": 0,
+      "rescued_from_low_health": false
+    },
+    {
+      "species": "Sunflower",
+      "pot_id": 4,
+      "stage": 2,
+      "age": 2,
+      "water_level": 7,
+      "health": 10,
+      "is_alive": true,
+      "bloom_color": null,
+      "rare_bloom": false,
+      "mutation_boost": false,
+      "revived_once": false,
+      "full_water_streak": 1,
+      "rescued_from_low_health": false
+    }
+  ],
+  "encyclopedia": [
+    "Solar Sunflower",
+    "Mint Lily",
+    "Rare Ivory Tulip"
+  ],
+  "achievements": [
+    "Plant Doctor",
+    "First Bloom",
+    "Rain Lover"
+  ],
+  "market_seed_prices": {
+    "Tulip": 22,
+    "Sunflower": 25,
+    "Lily": 28,
+    "Rose": 30,
+    "Daisy": 14,
+    "Orchid": 28
+  },
+  "market_sell_prices": {
+    "Tulip": 47,
+    "Sunflower": 41,
+    "Lily": 50,
+    "Rose": 38,
+    "Daisy": 41,
+    "Orchid": 73
+  },
+  "sold_today": 0,
+  "revived_today": false,
+  "current_quest": {
+    "name": "Steady Hands",
+    "description": "Keep every living plant between water 4 and 7 by the end of the day.",
+    "reward": 20,
+    "quest_type": "water_range",
+    "low": 4,
+    "high": 7
+  },
+  "next_pot_id": 5
+}
