@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -27,33 +28,41 @@ WHITE = "\033[37m"
 SPECIES_DATA = {
     "Tulip": {"seed_price": 12, "sell_price": 30, "water_need": 5},
     "Sunflower": {"seed_price": 15, "sell_price": 36, "water_need": 6},
-    "Lily": {"seed_price": 18, "sell_price": 42, "water_need": 4},
     "Rose": {"seed_price": 20, "sell_price": 48, "water_need": 5},
     "Daisy": {"seed_price": 10, "sell_price": 24, "water_need": 5},
-    "Orchid": {"seed_price": 22, "sell_price": 55, "water_need": 4},
+    "Lily": {"seed_price": 18, "sell_price": 42, "water_need": 4},
+    "Valley_Lily": {"seed_price": 16, "sell_price": 38, "water_need": 4},
+    "Magnolia": {"seed_price": 19, "sell_price": 46, "water_need": 5},
+    "Morning_Glory": {"seed_price": 14, "sell_price": 34, "water_need": 6},
+    "Peony": {"seed_price": 21, "sell_price": 52, "water_need": 5},
+    "Carnation": {"seed_price": 13, "sell_price": 32, "water_need": 5},
+    "Moth_Orchid": {"seed_price": 22, "sell_price": 55, "water_need": 4},
 }
 
-COLOR_VARIANTS = {
-    "Tulip": [("Ivory", WHITE), ("Blush", MAGENTA), ("Amber", YELLOW), ("Azure", CYAN)],
-    "Sunflower": [("Gold", YELLOW), ("Sunset", RED), ("Pearl", WHITE), ("Solar", CYAN)],
-    "Lily": [("Moon", WHITE), ("Lavender", MAGENTA), ("Mint", GREEN), ("Aurora", CYAN)],
-    "Rose": [("Crimson", RED), ("Snow", WHITE), ("Coral", YELLOW), ("Nebula", MAGENTA)],
-    "Daisy": [("Classic", WHITE), ("Honey", YELLOW), ("Frost", CYAN), ("Candy", MAGENTA)],
-    "Orchid": [("Velvet", MAGENTA), ("Pearl", WHITE), ("Tide", CYAN), ("Ember", RED)],
-}
+COLOR_VARIANTS = [("Pink", MAGENTA), ("Yellow", YELLOW), ("Blue", CYAN), ("Green", GREEN)]
+COLOR_VARIANT_CODES = {name: code for name, code in COLOR_VARIANTS}
+
+
+def bloom_colour_code(bloom_color: str | None) -> str | None:
+    if not bloom_color:
+        return None
+    name = bloom_color.removeprefix("Rare ").strip()
+    return COLOR_VARIANT_CODES.get(name)
+
+
+def display_species_name(species: str) -> str:
+    return species.replace("_", " ")
+
+
+def canonical_species(raw: str) -> str:
+    cleaned = raw.strip().replace(" ", "_")
+    parts = [part for part in cleaned.split("_") if part]
+    return "_".join(part[:1].upper() + part[1:].lower() for part in parts)
 
 STAGE_NAMES = ["Seed", "Sprout", "Growing", "Bloom"]
 # Stage 1 -> 2: 1 day, 2 -> 3: 1 day, 3 -> 4: 2 days.
 # (Indexed from 0: Seed, 1: Sprout, 2: Growing, 3: Bloom)
 STAGE_DURATIONS = [0, 1, 2, 4]
-
-ACHIEVEMENT_REWARDS = {
-    "First Bloom": 25,
-    "Rain Lover": 30,
-    "Plant Doctor": 40,
-    "Collector I": 50,
-}
-
 
 def clamp(value: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
@@ -85,8 +94,35 @@ def terminal_width() -> int:
 def center_line(line: str, width: int | None = None) -> str:
     width = width or terminal_width()
     stripped = line.rstrip("\n")
-    pad = max(0, (width - len(stripped)) // 2)
+    pad = max(0, (width - visible_len(stripped)) // 2)
     return (" " * pad) + stripped
+
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def visible_len(text: str) -> int:
+    return len(ANSI_RE.sub("", text))
+
+
+def center_at(line: str, center_col: int, width: int | None = None) -> str:
+    width = width or terminal_width()
+    stripped = line.rstrip("\n")
+    pad = max(0, center_col - (visible_len(stripped) // 2))
+    if pad >= width:
+        pad = max(0, width - 1)
+    return (" " * pad) + stripped
+
+
+def center_in_width(text: str, width: int) -> str:
+    stripped = text.rstrip("\n")
+    padding = max(0, (width - visible_len(stripped)) // 2)
+    return (" " * padding) + stripped
+
+
+def pad_to_visible_width(text: str, width: int) -> str:
+    padding = max(0, width - visible_len(text))
+    return text + (" " * padding)
 
 
 def center_block(text: str) -> str:
@@ -150,6 +186,9 @@ def load_ascii_art() -> dict[str, str]:
         if line.startswith("#"):
             current_raw = line[1:].strip()
             current = current_raw
+            if "(bloom" in current:
+                current = current.split("(bloom", 1)[0].strip()
+            current = current.replace(" ", "_")
             for chinese, english in header_map.items():
                 if chinese in current_raw:
                     current = english
@@ -175,13 +214,12 @@ class Plant:
     is_alive: bool = True
     bloom_color: str | None = None
     rare_bloom: bool = False
-    mutation_boost: bool = False
     revived_once: bool = False
     full_water_streak: int = 0
     rescued_from_low_health: bool = False
 
     def display_name(self) -> str:
-        return self.species
+        return display_species_name(self.species)
 
     def target_water(self) -> int:
         return SPECIES_DATA[self.species]["water_need"]
@@ -241,7 +279,6 @@ class Plant:
             "is_alive": self.is_alive,
             "bloom_color": self.bloom_color,
             "rare_bloom": self.rare_bloom,
-            "mutation_boost": self.mutation_boost,
             "revived_once": self.revived_once,
             "full_water_streak": self.full_water_streak,
             "rescued_from_low_health": self.rescued_from_low_health,
@@ -249,7 +286,11 @@ class Plant:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Plant":
-        return cls(**data)
+        payload = dict(data)
+        payload.pop("mutation_boost", None)
+        if "species" in payload:
+            payload["species"] = payload["species"].replace(" ", "_")
+        return cls(**payload)
 
 
 @dataclass
@@ -275,7 +316,7 @@ class PlayerState:
     day: int = 1
     plants: list[Plant] = field(default_factory=list)
     encyclopedia: list[str] = field(default_factory=list)
-    achievements: list[str] = field(default_factory=list)
+    owned_flowers: list[str] = field(default_factory=list)
     market_seed_prices: dict[str, int] = field(default_factory=dict)
     market_sell_prices: dict[str, int] = field(default_factory=dict)
     sold_today: int = 0
@@ -289,7 +330,7 @@ class PlayerState:
             "day": self.day,
             "plants": [plant.to_dict() for plant in self.plants],
             "encyclopedia": self.encyclopedia,
-            "achievements": self.achievements,
+            "owned_flowers": self.owned_flowers,
             "market_seed_prices": self.market_seed_prices,
             "market_sell_prices": self.market_sell_prices,
             "sold_today": self.sold_today,
@@ -305,7 +346,7 @@ class PlayerState:
         state.day = data["day"]
         state.plants = [Plant.from_dict(item) for item in data["plants"]]
         state.encyclopedia = data["encyclopedia"]
-        state.achievements = data["achievements"]
+        state.owned_flowers = data.get("owned_flowers", [])
         state.market_seed_prices = data["market_seed_prices"]
         state.market_sell_prices = data["market_sell_prices"]
         state.sold_today = data["sold_today"]
@@ -325,9 +366,21 @@ class GardenGame:
         if SAVE_PATH.exists():
             try:
                 data = json.loads(SAVE_PATH.read_text(encoding="utf-8"))
-                return PlayerState.from_dict(data)
+                state = PlayerState.from_dict(data)
+
+                # Fix old save files after adding new flower species
+                self.refresh_market_prices(state, initial=False)
+
+                # Fix old plant names if needed
+                for plant in state.plants:
+                    plant.species = plant.species.replace(" ", "_")
+                    if plant.species == "Orchid":
+                        plant.species = "Moth_Orchid"
+
+                return state
             except (json.JSONDecodeError, KeyError, TypeError):
                 pass
+
         state = PlayerState()
         self.refresh_market_prices(state, initial=True)
         state.current_quest = self.generate_quest(state)
@@ -345,7 +398,7 @@ class GardenGame:
             print(center_block(self.title_screen()))
             self.print_status()
             choice = safe_input(
-                "\nChoose: [1] Garden [2] Shop [3] Market [4] Encyclopedia [5] Sleep [6] Save&Quit [7] Quit [8] Delete Save\n> "
+                "\nChoose: [1] Garden [2] Shop [3] Market [4] Encyclopedia [5] Sleep [6] Save & Quit [7] Delete Save\n> "
             )
             print()
             if choice == "1":
@@ -357,15 +410,13 @@ class GardenGame:
             elif choice == "4":
                 self.show_encyclopedia()
             elif choice == "5":
+                clear_terminal()
                 self.end_day()
             elif choice == "6":
                 self.save()
                 print(color_text("Progress saved. See you in the garden.", CYAN))
                 self.running = False
             elif choice == "7":
-                print(color_text("See you in the garden.", CYAN))
-                self.running = False
-            elif choice == "8":
                 self.delete_save()
             else:
                 print(color_text("Please choose a valid menu option.", RED))
@@ -375,9 +426,8 @@ class GardenGame:
         seed_art = ASCII_ART.get("Seed", "")
         return (
             color_text("Bloom & Bust Garden", GREEN)
-            + "\nA terminal flower market game built for COMP9001.\n\n"
+            + "\nA terminal flower market game built for COMP9001.\n"
             + seed_art
-            + "\n"
             + "\n"
             + pot_art
             + "\n"
@@ -397,20 +447,36 @@ class GardenGame:
         while True:
             self.show_garden()
             choice = safe_input(
-                "\nGarden: [1] Water [2] Fertiliser [3] Mutation Serum [4] Revival Idol [5] Back\n> "
+                "\nGarden: [1] Water [2] Fertiliser [3] Revival Idol [4] Harvest (press Enter to go back)\n> "
             )
+            if choice == "":
+                return
             if choice == "1":
                 self.water_plant()
             elif choice == "2":
                 self.use_fertiliser()
             elif choice == "3":
-                self.use_mutation_serum()
-            elif choice == "4":
                 self.use_revival_idol()
-            elif choice == "5":
-                return
+            elif choice == "4":
+                self.harvest_flower()
             else:
                 print(color_text("That option is not available.", RED))
+    
+    def harvest_flower(self) -> None:
+        plant = self.select_plant()
+        if not plant:
+            return
+        if not plant.is_alive:
+            print(color_text("You cannot harvest a withered plant.", RED))
+            return
+        if plant.stage != 3:
+            print(color_text("You can only harvest flowers at the Bloom stage.", RED))
+            return
+        if plant.species not in self.player.owned_flowers:
+            self.player.owned_flowers.append(plant.species)
+        if plant.species not in self.player.encyclopedia:
+            self.player.encyclopedia.append(plant.species)
+        print(color_text(f"Harvested: {plant.display_name()} (owned)", CYAN))
 
     def show_garden(self) -> None:
         print(center_line(color_text("Garden Overview", BLUE)))
@@ -418,17 +484,20 @@ class GardenGame:
             print(center_line("You do not own any plants yet."))
             return
         pot_art_lines = ASCII_ART.get("Pot", "").splitlines()
-        cards: list[list[str]] = []
+        if pot_art_lines:
+            # Remove the very top rim line to reduce visual clutter.
+            pot_art_lines = pot_art_lines[1:]
+
+        cards: list[dict[str, list[str]]] = []
         for plant in self.player.plants:
             alive_text = color_text("Alive", GREEN) if plant.is_alive else color_text("Withered", RED)
             bloom_text = plant.bloom_color or "-"
 
             info_line_1 = (
-                f"Pot {plant.pot_id} || {plant.display_name()} || Stage: {STAGE_NAMES[plant.stage]}"
+                f"Pot {plant.pot_id}||{plant.display_name()}||Stage:{STAGE_NAMES[plant.stage]}"
             )
-            info_line_2 = (
-                f"Water: {plant.water_level}/10 || Health: {plant.health}/10 || Bloom: {bloom_text} || {alive_text}"
-            )
+            info_line_2 = f"Water:{plant.water_level}/10||Health:{plant.health}/10"
+            info_line_3 = f"Bloom:{bloom_text}||{alive_text}"
 
             flower_art = ""
             if not plant.is_alive:
@@ -442,21 +511,71 @@ class GardenGame:
             elif plant.stage == 3:
                 flower_art = ASCII_ART.get(plant.species, "")
 
-            art_lines = flower_art.splitlines() if flower_art else []
-            if pot_art_lines:
-                art_lines = art_lines + [""] + pot_art_lines
+            flower_lines = flower_art.splitlines() if flower_art else []
+            if plant.is_alive and plant.stage == 3 and flower_lines:
+                # For blooming plants, drop the bottom-most line so blooms don't look "too tall".
+                flower_lines = flower_lines[:-1]
 
-            card_lines = [info_line_1, info_line_2, ""] + art_lines
-            cards.append(card_lines)
+            colour_code = bloom_colour_code(plant.bloom_color) if plant.is_alive and plant.stage == 3 else None
+            if colour_code:
+                flower_lines = [color_text(line, colour_code) for line in flower_lines]
 
-        grid = render_grid(cards, columns=3)
-        print(center_block(grid))
+            cards.append(
+                {
+                    "header": [info_line_1, info_line_2, info_line_3],
+                    "flower": flower_lines,
+                    "pot": pot_art_lines,
+                }
+            )
+
+        width = terminal_width()
+        gap = "   "
+        columns = 3
+        col_width = max(10, (width - (columns - 1) * len(gap)) // columns)
+
+        rows: list[str] = []
+        for row_start in range(0, len(cards), columns):
+            row_cards = cards[row_start : row_start + columns]
+
+            max_flower_height = max((len(card["flower"]) for card in row_cards), default=0)
+            pot_height = max((len(card["pot"]) for card in row_cards), default=0)
+            header_height = 3
+            spacer_height = 1  # blank line between text and art blocks
+            total_height = header_height + spacer_height + max_flower_height + pot_height
+
+            # Pre-format each card into a fixed-height list of col_width strings.
+            formatted: list[list[str]] = []
+            for card in row_cards:
+                header = [center_in_width(line, col_width) for line in card["header"]]
+
+                # Bottom-align flowers so their "base" lines align horizontally.
+                flower = card["flower"]
+                flower_pad = [""] * max(0, max_flower_height - len(flower))
+                flower_aligned = flower_pad + flower
+                flower_block = [center_in_width(line, col_width) for line in flower_aligned]
+
+                pot_block = [center_in_width(line, col_width) for line in card["pot"]]
+                pot_block += [""] * max(0, pot_height - len(pot_block))
+
+                column_lines = header + [""] * spacer_height + flower_block + pot_block
+                column_lines += [""] * max(0, total_height - len(column_lines))
+                formatted.append(column_lines)
+
+            for i in range(total_height):
+                parts: list[str] = []
+                for column in formatted:
+                    parts.append(pad_to_visible_width(column[i], col_width))
+                rows.append(gap.join(parts).rstrip())
+            rows.append("")
+        print("\n".join(rows).rstrip())
 
     def select_plant(self, allow_dead: bool = False, prompt: str = "Choose pot id: ") -> Plant | None:
         if not self.player.plants:
             print("You have no plants.")
             return None
         raw = safe_input(prompt)
+        if raw == "":
+            return None
         if not raw.isdigit():
             print(color_text("Please enter a pot number.", RED))
             return None
@@ -465,7 +584,9 @@ class GardenGame:
             if plant.pot_id == pot_id:
                 if plant.is_alive or allow_dead:
                     return plant
-                print(color_text("That plant has withered.", RED))
+
+                print(color_text("That plant has withered. Use Revival Idol to bring it back.", RED))
+                safe_input("\nPress Enter to continue...")
                 return None
         print(color_text("No plant with that pot id.", RED))
         return None
@@ -511,27 +632,15 @@ class GardenGame:
                 plant.stage = stage_index
         print(color_text(f"Pot {plant.pot_id} was pushed forward one growth step.", GREEN))
 
-    def use_mutation_serum(self) -> None:
-        cost = 28
-        if self.player.coins < cost:
-            print(color_text("Not enough coins for mutation serum.", RED))
-            return
-        plant = self.select_plant()
-        if not plant:
-            return
-        if plant.stage >= 3:
-            print(color_text("Use mutation serum before the plant blooms.", RED))
-            return
-        self.player.coins -= cost
-        plant.mutation_boost = True
-        print(color_text("Mutation serum applied. Rare bloom chance is now much higher.", GREEN))
-
     def use_revival_idol(self) -> None:
         cost = 40
         if self.player.coins < cost:
             print(color_text("Not enough coins for revival idol.", RED))
             return
-        plant = self.select_plant(allow_dead=True)
+        plant = self.select_plant(
+            allow_dead=True,
+            prompt="Choose pot id (Cost: 40, press Enter to cancel): "
+        )
         if not plant:
             return
         if plant.is_alive:
@@ -549,9 +658,10 @@ class GardenGame:
         print(center_line(color_text("Seed Shop", BLUE)))
         rows: list[tuple[str, str]] = []
         for species in SPECIES_DATA:
+            display = display_species_name(species)
             seed_price = f"{self.player.market_seed_prices[species]} coins"
             sell_price = f"Base sell {self.player.market_sell_prices[species]}"
-            rows.append((species, f"{seed_price} | {sell_price}"))
+            rows.append((display, f"{seed_price} | {sell_price}"))
         left_width = max(len(left) for left, _ in rows) if rows else 0
         right_width = max(len(right) for _, right in rows) if rows else 0
         for left, right in rows:
@@ -560,7 +670,7 @@ class GardenGame:
         choice = safe_input("Type species name to buy, or press Enter to go back: ")
         if not choice:
             return
-        species = choice.title()
+        species = canonical_species(choice)
         if species not in SPECIES_DATA:
             print(color_text("Unknown seed type.", RED))
             return
@@ -572,7 +682,14 @@ class GardenGame:
         plant = Plant(species=species, pot_id=self.player.next_pot_id)
         self.player.next_pot_id += 1
         self.player.plants.append(plant)
-        print(color_text(f"You bought a {species} seed for pot {plant.pot_id}.", GREEN))
+
+        message = boxed_message(
+            "Seed Purchased",
+            f"You successfully bought a {display_species_name(species)} seed!"
+        )
+
+        print(color_text(center_block(message), GREEN))
+        safe_input("\nPress Enter to continue...")
 
     def market_menu(self) -> None:
         print(center_line(color_text("Flower Market", BLUE)))
@@ -607,29 +724,66 @@ class GardenGame:
         print(color_text("That plant is not ready to sell.", RED))
 
     def show_encyclopedia(self) -> None:
-        print(center_line(color_text("Encyclopedia & Achievements", BLUE)))
-        if self.player.encyclopedia:
-            print(center_line("Discovered blooms:"))
-            for entry in self.player.encyclopedia:
-                print(center_line(f"- {entry}"))
-        else:
-            print(center_line("No blooms discovered yet."))
-        print()
-        print(center_line("Achievements:"))
-        if self.player.achievements:
-            for entry in self.player.achievements:
-                print(center_line(f"- {entry}"))
-        else:
-            print(center_line("No achievements unlocked yet."))
+        print(center_line(color_text("Encyclopedia", BLUE)))
 
+        width = terminal_width()
+        gap = "   "
+        columns = 3
+        col_width = max(10, (width - (columns - 1) * len(gap)) // columns)
+
+        species_list = list(SPECIES_DATA.keys())
+        owned = set(self.player.owned_flowers)
+        cards: list[dict[str, list[str]]] = []
+        for species in species_list:
+            art = ASCII_ART.get(species, "")
+            art_lines = art.splitlines() if art else ["(missing ascii)"]
+            if art_lines:
+                art_lines = art_lines[:-1]
+
+            name_line = display_species_name(species)
+            if species in owned:
+                name_line = color_text(f"{name_line}  owned", CYAN)
+                art_lines = [color_text(line, CYAN) for line in art_lines]
+
+            cards.append({"header": [name_line], "art": art_lines})
+
+        rows: list[str] = []
+        for row_start in range(0, len(cards), columns):
+            row_cards = cards[row_start : row_start + columns]
+            max_art_height = max((len(card["art"]) for card in row_cards), default=0)
+            header_height = 1
+            spacer_height = 1
+            total_height = header_height + spacer_height + max_art_height
+
+            formatted: list[list[str]] = []
+            for card in row_cards:
+                header = [center_in_width(line, col_width) for line in card["header"]]
+                art = card["art"]
+                art_pad = [""] * max(0, max_art_height - len(art))
+                art_block = [center_in_width(line, col_width) for line in (art + art_pad)]
+                column_lines = header + [""] * spacer_height + art_block
+                column_lines += [""] * max(0, total_height - len(column_lines))
+                formatted.append(column_lines)
+
+            for i in range(total_height):
+                parts: list[str] = []
+                for column in formatted:
+                    parts.append(pad_to_visible_width(column[i], col_width))
+                rows.append(gap.join(parts).rstrip())
+            rows.append("")
+
+        print("\n".join(rows).rstrip())
+        # Achievements removed.
+        safe_input("\nPress Enter to go back...")
+        
     def refresh_market_prices(self, state: PlayerState, initial: bool = False) -> None:
         for species, info in SPECIES_DATA.items():
             if initial:
                 seed = info["seed_price"]
                 sell = info["sell_price"]
             else:
-                seed = state.market_seed_prices[species] + random.randint(-3, 4)
-                sell = state.market_sell_prices[species] + random.randint(-5, 6)
+                seed = state.market_seed_prices.get(species, info["seed_price"]) + random.randint(-3, 4)
+                sell = state.market_sell_prices.get(species, info["sell_price"]) + random.randint(-5, 6)
             state.market_seed_prices[species] = clamp(seed, max(6, info["seed_price"] - 5), info["seed_price"] + 10)
             state.market_sell_prices[species] = clamp(
                 sell, max(14, info["sell_price"] - 10), info["sell_price"] + 18
@@ -689,7 +843,6 @@ class GardenGame:
                 self.resolve_bloom(plant)
                 bloom_happened = True
         reward = self.resolve_quest()
-        achievement_messages = self.check_achievements()
         self.player.day += 1
         self.player.sold_today = 0
         self.player.revived_today = False
@@ -703,9 +856,7 @@ class GardenGame:
             print(center_line(color_text("A new bloom appeared in the garden.", MAGENTA)))
         if reward:
             print(center_line(color_text(f"Quest complete. You earned {reward} coins.", GREEN)))
-        for message in achievement_messages:
-            print(center_line(message))
-        if not events and not bloom_happened and not reward and not achievement_messages:
+        if not events and not bloom_happened and not reward:
             print(center_line("It was a quiet night in the garden."))
 
         safe_input("\nPress Enter to wake up to a new day... ")
@@ -714,7 +865,7 @@ class GardenGame:
     def delete_save(self) -> None:
         print(center_line(color_text("Delete Save", RED)))
         confirm = safe_input("Type DELETE to confirm, or press Enter to cancel: ")
-        if confirm != "DELETE":
+        if confirm.strip().upper() != "DELETE":
             print(color_text("Cancelled.", YELLOW))
             return
         try:
@@ -727,30 +878,30 @@ class GardenGame:
         print(color_text("Save deleted. A new garden has been started.", GREEN))
 
     def resolve_bloom(self, plant: Plant) -> None:
-        rare_chance = 0.60 if plant.mutation_boost else 0.15
-        rare = random.random() < rare_chance
-        colour_name, colour_code = random.choice(COLOR_VARIANTS[plant.species])
-        if rare:
-            colour_name = f"Rare {colour_name}"
-        plant.rare_bloom = rare
-        plant.bloom_color = colour_name
-        plant.mutation_boost = False
+        mutated = random.random() < 0.30
+        plant.rare_bloom = mutated
+        if mutated:
+            colour_name, colour_code = random.choice(COLOR_VARIANTS)
+            plant.bloom_color = colour_name
+        else:
+            colour_name, colour_code = None, None
+            plant.bloom_color = None
         art = ASCII_ART.get(plant.species, "")
         if art:
             print(center_block(art))
-        if rare:
+        if mutated:
             print(center_line(sparkles()))
         print(
             center_line(
-                color_text(
-                    f"Pot {plant.pot_id} bloomed into a {colour_name} {plant.species}.",
-                    colour_code,
-                )
+                color_text(f"Pot {plant.pot_id} bloomed into a {colour_name} {plant.species}.", colour_code)
+                if mutated and colour_name and colour_code
+                else f"Pot {plant.pot_id} bloomed into a {plant.species}."
             )
         )
-        entry = f"{colour_name} {plant.species}"
-        if entry not in self.player.encyclopedia:
-            self.player.encyclopedia.append(entry)
+        if mutated and colour_name:
+            entry = f"{colour_name} {plant.species}"
+            if entry not in self.player.encyclopedia:
+                self.player.encyclopedia.append(entry)
 
     def resolve_quest(self) -> int:
         quest = self.player.current_quest
@@ -770,29 +921,6 @@ class GardenGame:
             self.player.coins += quest.reward
             return quest.reward
         return 0
-
-    def check_achievements(self) -> list[str]:
-        messages = []
-        unlocked = set(self.player.achievements)
-
-        def unlock(name: str) -> None:
-            if name in unlocked:
-                return
-            unlocked.add(name)
-            self.player.achievements.append(name)
-            reward = ACHIEVEMENT_REWARDS[name]
-            self.player.coins += reward
-            messages.append(color_text(boxed_message(f"Achievement: {name}", f"+{reward} coins"), YELLOW))
-
-        if any(plant.stage == 3 and plant.is_alive for plant in self.player.plants):
-            unlock("First Bloom")
-        if any(plant.full_water_streak >= 3 for plant in self.player.plants):
-            unlock("Rain Lover")
-        if any(plant.revived_once or plant.rescued_from_low_health for plant in self.player.plants):
-            unlock("Plant Doctor")
-        if len(self.player.encyclopedia) >= 5:
-            unlock("Collector I")
-        return messages
 
     def sale_price(self, plant: Plant) -> int:
         base = self.player.market_sell_prices[plant.species]
