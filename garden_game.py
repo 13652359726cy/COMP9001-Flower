@@ -311,12 +311,41 @@ class Quest:
 
 
 @dataclass
+class HarvestedFlower:
+    item_id: int
+    species: str
+    bloom_color: str | None = None
+    rare_bloom: bool = False
+
+    def display_name(self) -> str:
+        if self.bloom_color:
+            return f"{self.bloom_color} {display_species_name(self.species)}"
+        return display_species_name(self.species)
+
+    def to_dict(self) -> dict:
+        return {
+            "item_id": self.item_id,
+            "species": self.species,
+            "bloom_color": self.bloom_color,
+            "rare_bloom": self.rare_bloom,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "HarvestedFlower":
+        payload = dict(data)
+        if "species" in payload:
+            payload["species"] = payload["species"].replace(" ", "_")
+        return cls(**payload)
+
+
+@dataclass
 class PlayerState:
     coins: int = 90
     day: int = 1
     plants: list[Plant] = field(default_factory=list)
     encyclopedia: list[str] = field(default_factory=list)
     owned_flowers: list[str] = field(default_factory=list)
+    harvested_flowers: list[HarvestedFlower] = field(default_factory=list)
     market_seed_prices: dict[str, int] = field(default_factory=dict)
     market_sell_prices: dict[str, int] = field(default_factory=dict)
     sold_today: int = 0
@@ -331,6 +360,7 @@ class PlayerState:
             "plants": [plant.to_dict() for plant in self.plants],
             "encyclopedia": self.encyclopedia,
             "owned_flowers": self.owned_flowers,
+            "harvested_flowers": [flower.to_dict() for flower in self.harvested_flowers],
             "market_seed_prices": self.market_seed_prices,
             "market_sell_prices": self.market_sell_prices,
             "sold_today": self.sold_today,
@@ -347,6 +377,7 @@ class PlayerState:
         state.plants = [Plant.from_dict(item) for item in data["plants"]]
         state.encyclopedia = data["encyclopedia"]
         state.owned_flowers = data.get("owned_flowers", [])
+        state.harvested_flowers = [HarvestedFlower.from_dict(item) for item in data.get("harvested_flowers", [])]
         state.market_seed_prices = data["market_seed_prices"]
         state.market_sell_prices = data["market_sell_prices"]
         state.sold_today = data["sold_today"]
@@ -361,6 +392,15 @@ class GardenGame:
     def __init__(self) -> None:
         self.player = self.load_or_create_state()
         self.running = True
+
+    def reindex_garden_pots(self) -> None:
+        for index, plant in enumerate(self.player.plants, start=1):
+            plant.pot_id = index
+        self.player.next_pot_id = len(self.player.plants) + 1
+
+    def reindex_harvested_flowers(self) -> None:
+        for index, flower in enumerate(self.player.harvested_flowers, start=1):
+            flower.item_id = index
 
     def load_or_create_state(self) -> PlayerState:
         if SAVE_PATH.exists():
@@ -377,6 +417,9 @@ class GardenGame:
                     if plant.species == "Orchid":
                         plant.species = "Moth_Orchid"
 
+                self.player = state
+                self.reindex_garden_pots()
+                self.reindex_harvested_flowers()
                 return state
             except (json.JSONDecodeError, KeyError, TypeError):
                 pass
@@ -384,6 +427,8 @@ class GardenGame:
         state = PlayerState()
         self.refresh_market_prices(state, initial=True)
         state.current_quest = self.generate_quest(state)
+        self.player = state
+        self.reindex_garden_pots()
         return state
 
     def save(self) -> None:
@@ -472,11 +517,21 @@ class GardenGame:
         if plant.stage != 3:
             print(color_text("You can only harvest flowers at the Bloom stage.", RED))
             return
-        if plant.species not in self.player.owned_flowers:
-            self.player.owned_flowers.append(plant.species)
+        self.player.owned_flowers.append(plant.species)
         if plant.species not in self.player.encyclopedia:
             self.player.encyclopedia.append(plant.species)
-        print(color_text(f"Harvested: {plant.display_name()} (owned)", CYAN))
+        self.player.harvested_flowers.append(
+            HarvestedFlower(
+                item_id=len(self.player.harvested_flowers) + 1,
+                species=plant.species,
+                bloom_color=plant.bloom_color,
+                rare_bloom=plant.rare_bloom,
+            )
+        )
+        self.player.plants = [p for p in self.player.plants if p.pot_id != plant.pot_id]
+        self.reindex_garden_pots()
+        self.reindex_harvested_flowers()
+        print(color_text(f"Harvested: {plant.display_name()} from pot {plant.pot_id}.", CYAN))
 
     def show_garden(self) -> None:
         print(center_line(color_text("Garden Overview", BLUE)))
@@ -615,11 +670,11 @@ class GardenGame:
         )
 
     def use_fertiliser(self) -> None:
-        cost = 24
+        cost = 20
         if self.player.coins < cost:
             print(color_text("Not enough coins for fertiliser.", RED))
             return
-        plant = self.select_plant()
+        plant = self.select_plant(prompt="Choose pot id (Cost: 20, press Enter to cancel): ")
         if not plant:
             return
         if plant.stage >= 3:
@@ -660,8 +715,7 @@ class GardenGame:
         for species in SPECIES_DATA:
             display = display_species_name(species)
             seed_price = f"{self.player.market_seed_prices[species]} coins"
-            sell_price = f"Base sell {self.player.market_sell_prices[species]}"
-            rows.append((display, f"{seed_price} | {sell_price}"))
+            rows.append((display, seed_price))
         left_width = max(len(left) for left, _ in rows) if rows else 0
         right_width = max(len(right) for _, right in rows) if rows else 0
         for left, right in rows:
@@ -680,8 +734,8 @@ class GardenGame:
             return
         self.player.coins -= price
         plant = Plant(species=species, pot_id=self.player.next_pot_id)
-        self.player.next_pot_id += 1
         self.player.plants.append(plant)
+        self.reindex_garden_pots()
 
         message = boxed_message(
             "Seed Purchased",
@@ -693,35 +747,41 @@ class GardenGame:
 
     def market_menu(self) -> None:
         print(center_line(color_text("Flower Market", BLUE)))
-        blooming = [plant for plant in self.player.plants if plant.stage == 3 and plant.is_alive]
-        if not blooming:
-            print(center_line("You have no blooming plants to sell."))
+        if not self.player.harvested_flowers:
+            print(center_line("You have no harvested flowers to sell."))
+            safe_input("\nPress Enter to go back...")
             return
-        for plant in blooming:
-            price = self.sale_price(plant)
-            rarity = "Rare" if plant.rare_bloom else "Standard"
+        for flower in self.player.harvested_flowers:
+            price = self.sale_price(flower)
+            rarity = "Rare" if flower.rare_bloom else "Standard"
             print(
                 center_line(
-                    f"Pot {plant.pot_id}: {plant.display_name()} {plant.bloom_color or ''} "
-                    f"| {rarity} | Sale price: {price}"
+                    f"Flower {flower.item_id}: {flower.display_name()} | {rarity} | Sale price: {price}"
                 )
             )
-        raw = safe_input("Choose pot id to sell, or press Enter to go back: ")
+        raw = safe_input("Choose flower id to sell, or press Enter to go back: ")
         if not raw:
             return
         if not raw.isdigit():
-            print(color_text("Please enter a pot number.", RED))
+            print(color_text("Please enter a flower number.", RED))
             return
-        pot_id = int(raw)
-        for plant in blooming:
-            if plant.pot_id == pot_id:
-                price = self.sale_price(plant)
+        item_id = int(raw)
+        for flower in self.player.harvested_flowers:
+            if flower.item_id == item_id:
+                price = self.sale_price(flower)
+                sold_name = flower.display_name()
                 self.player.coins += price
                 self.player.sold_today += 1
-                self.player.plants = [p for p in self.player.plants if p.pot_id != pot_id]
-                print(color_text(f"Sold pot {pot_id} for {price} coins.", GREEN))
+                self.player.harvested_flowers = [f for f in self.player.harvested_flowers if f.item_id != item_id]
+                self.reindex_harvested_flowers()
+                message = boxed_message(
+                    "Flower Sold",
+                    f"You sold {sold_name} for {price} coins!"
+                )
+                print(color_text(center_block(message), GREEN))
+                safe_input("\nPress Enter to continue...")
                 return
-        print(color_text("That plant is not ready to sell.", RED))
+        print(color_text("That flower is not in your market inventory.", RED))
 
     def show_encyclopedia(self) -> None:
         print(center_line(color_text("Encyclopedia", BLUE)))
@@ -878,7 +938,7 @@ class GardenGame:
         print(color_text("Save deleted. A new garden has been started.", GREEN))
 
     def resolve_bloom(self, plant: Plant) -> None:
-        mutated = random.random() < 0.30
+        mutated = random.random() < 1
         plant.rare_bloom = mutated
         if mutated:
             colour_name, colour_code = random.choice(COLOR_VARIANTS)
@@ -922,8 +982,8 @@ class GardenGame:
             return quest.reward
         return 0
 
-    def sale_price(self, plant: Plant) -> int:
-        base = self.player.market_sell_prices[plant.species]
-        if plant.rare_bloom:
+    def sale_price(self, item: Plant | HarvestedFlower) -> int:
+        base = self.player.market_sell_prices[item.species]
+        if item.rare_bloom:
             return base * 3
         return base + 5

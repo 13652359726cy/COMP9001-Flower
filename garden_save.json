@@ -1,0 +1,143 @@
+{
+  "coins": 200,
+  "day": 21,
+  "plants": [
+    {
+      "species": "Daisy",
+      "pot_id": 1,
+      "stage": 3,
+      "age": 8,
+      "water_level": 1,
+      "health": 3,
+      "is_alive": true,
+      "bloom_color": "Blue",
+      "rare_bloom": true,
+      "revived_once": false,
+      "full_water_streak": 0,
+      "rescued_from_low_health": true
+    },
+    {
+      "species": "Daisy",
+      "pot_id": 2,
+      "stage": 3,
+      "age": 7,
+      "water_level": 0,
+      "health": 0,
+      "is_alive": false,
+      "bloom_color": "Pink",
+      "rare_bloom": true,
+      "revived_once": false,
+      "full_water_streak": 0,
+      "rescued_from_low_health": false
+    },
+    {
+      "species": "Daisy",
+      "pot_id": 3,
+      "stage": 3,
+      "age": 7,
+      "water_level": 0,
+      "health": 0,
+      "is_alive": false,
+      "bloom_color": "Yellow",
+      "rare_bloom": true,
+      "revived_once": false,
+      "full_water_streak": 0,
+      "rescued_from_low_health": false
+    },
+    {
+      "species": "Daisy",
+      "pot_id": 4,
+      "stage": 3,
+      "age": 7,
+      "water_level": 0,
+      "health": 0,
+      "is_alive": false,
+      "bloom_color": "Yellow",
+      "rare_bloom": true,
+      "revived_once": false,
+      "full_water_streak": 0,
+      "rescued_from_low_health": false
+    },
+    {
+      "species": "Peony",
+      "pot_id": 5,
+      "stage": 3,
+      "age": 4,
+      "water_level": 0,
+      "health": 3,
+      "is_alive": true,
+      "bloom_color": "Yellow",
+      "rare_bloom": true,
+      "revived_once": false,
+      "full_water_streak": 0,
+      "rescued_from_low_health": false
+    }
+  ],
+  "encyclopedia": [
+    "Green Tulip",
+    "Daisy",
+    "Tulip",
+    "Blue Daisy",
+    "Pink Daisy",
+    "Yellow Daisy",
+    "Yellow Peony"
+  ],
+  "owned_flowers": [
+    "Daisy",
+    "Tulip",
+    "Daisy",
+    "Daisy",
+    "Daisy"
+  ],
+  "harvested_flowers": [
+    {
+      "item_id": 1,
+      "species": "Daisy",
+      "bloom_color": null,
+      "rare_bloom": false
+    },
+    {
+      "item_id": 2,
+      "species": "Daisy",
+      "bloom_color": null,
+      "rare_bloom": false
+    }
+  ],
+  "market_seed_prices": {
+    "Tulip": 17,
+    "Sunflower": 24,
+    "Rose": 17,
+    "Daisy": 17,
+    "Lily": 25,
+    "Valley_Lily": 25,
+    "Magnolia": 22,
+    "Morning_Glory": 24,
+    "Peony": 24,
+    "Carnation": 23,
+    "Moth_Orchid": 17
+  },
+  "market_sell_prices": {
+    "Tulip": 48,
+    "Sunflower": 54,
+    "Rose": 63,
+    "Daisy": 32,
+    "Lily": 60,
+    "Valley_Lily": 56,
+    "Magnolia": 58,
+    "Morning_Glory": 52,
+    "Peony": 55,
+    "Carnation": 47,
+    "Moth_Orchid": 68
+  },
+  "sold_today": 0,
+  "revived_today": false,
+  "current_quest": {
+    "name": "Emergency Care",
+    "description": "Revive one withered plant today.",
+    "reward": 30,
+    "quest_type": "revive_once",
+    "low": null,
+    "high": null
+  },
+  "next_pot_id": 6
+}
